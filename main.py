@@ -1,10 +1,16 @@
 import os
 import argparse
+import getpass
+import logging
 from dotenv import load_dotenv, set_key
 from lead_agent import (
     add_seed_url, remove_seed_url, check_status, bulk_add_urls,
-    find_similar_websites, view_leads, delete_lead, view_errors, initialize_exa
+    find_similar_websites, view_leads, delete_lead, view_errors, initialize_exa, get_seed_urls
 )
+
+# Set up logging
+logging.basicConfig(filename='lead_agent.log', level=logging.INFO,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def print_welcome():
     print("Welcome to Lead Agent!")
@@ -15,7 +21,7 @@ def print_welcome():
     print("  remove <URL>        - Remove a specific seed URL")
     print("  status [URL]        - Check status of all URLs or a specific URL")
     print("  bulk-add <FILE>     - Bulk add URLs from a text file")
-    print("  find-similar [URL]  - Find similar websites for all seed URLs or a specific URL")
+    print("  find-similar        - Find similar websites for seed URLs")
     print("  view-leads          - View all leads")
     print("  delete-lead <ID>    - Delete a specific lead")
     print("  view-errors         - View all errors")
@@ -26,7 +32,7 @@ def setup():
     print("Welcome to Lead Agent Setup!")
     print("Let's get you set up with the necessary API keys.")
     
-    exa_api_key = input("Please enter your Exa AI API key: ").strip()
+    exa_api_key = getpass.getpass("Please enter your Exa AI API key: ").strip()
     
     # Save the API key to .env file
     env_file = '.env'
@@ -34,6 +40,29 @@ def setup():
     
     print("\nSetup complete! Your API key has been saved.")
     print("You can now start using Lead Agent.")
+
+def select_seed_url():
+    seed_urls = get_seed_urls()
+    if not seed_urls:
+        print("No seed URLs found. Please add some first.")
+        return None
+
+    print("Select a seed URL:")
+    print("0. All seed URLs")
+    for i, url in enumerate(seed_urls, 1):
+        print(f"{i}. {url}")
+
+    while True:
+        try:
+            choice = int(input("Enter the number of your choice: "))
+            if choice == 0:
+                return seed_urls
+            elif 1 <= choice <= len(seed_urls):
+                return [seed_urls[choice - 1]]
+            else:
+                print("Invalid choice. Please try again.")
+        except ValueError:
+            print("Please enter a valid number.")
 
 def main():
     # Check if .env file exists and contains EXA_API_KEY
@@ -72,12 +101,10 @@ def main():
         elif action == 'bulk-add' and len(command) == 2:
             bulk_add_urls(command[1])
         elif action == 'find-similar':
-            if len(command) == 1:
-                find_similar_websites()
-            elif len(command) == 2:
-                find_similar_websites(command[1])
-            else:
-                print("Invalid usage. Use 'find-similar' or 'find-similar <URL>'")
+            urls = select_seed_url()
+            if urls:
+                for url in urls:
+                    find_similar_websites(url)
         elif action == 'view-leads':
             view_leads()
         elif action == 'delete-lead' and len(command) == 2:
