@@ -2,11 +2,13 @@ import os
 import argparse
 import getpass
 import logging
+import sqlite3  # Add this import
 from dotenv import load_dotenv, set_key
 from lead_agent import (
     add_seed_url, remove_seed_url, check_status, bulk_add_urls,
     find_similar_websites, view_leads, delete_lead, view_errors, initialize_exa, get_seed_urls
 )
+from research_crew import conduct_research, initialize_research_tools, check_leads_table
 
 # Set up logging
 logging.basicConfig(filename='lead_agent.log', level=logging.INFO,
@@ -27,18 +29,25 @@ def print_welcome():
     print("  view-errors         - View all errors")
     print("  help                - Show this help message")
     print("  exit                - Exit the program")
+    print("  research-leads      - Conduct research on leads")
+    print("  add-test-lead        - Add a test lead to the database")
+    print("  check-leads         - Check the leads table")
 
 def setup():
     print("Welcome to Lead Agent Setup!")
     print("Let's get you set up with the necessary API keys.")
     
     exa_api_key = getpass.getpass("Please enter your Exa AI API key: ").strip()
+    groq_api_key = getpass.getpass("Please enter your Groq API key: ").strip()
+    apollo_api_key = getpass.getpass("Please enter your Apollo API key: ").strip()
     
-    # Save the API key to .env file
+    # Save the API keys to .env file
     env_file = '.env'
     set_key(env_file, 'EXA_API_KEY', exa_api_key)
+    set_key(env_file, 'GROQ_API_KEY', groq_api_key)
+    set_key(env_file, 'APOLLO_API_KEY', apollo_api_key)
     
-    print("\nSetup complete! Your API key has been saved.")
+    print("\nSetup complete! Your API keys have been saved.")
     print("You can now start using Lead Agent.")
 
 def select_seed_url():
@@ -64,13 +73,26 @@ def select_seed_url():
         except ValueError:
             print("Please enter a valid number.")
 
+def add_test_lead():
+    conn = sqlite3.connect('leads.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO leads (company_name, website, status)
+        VALUES (?, ?, ?)
+    ''', ('Test Company', 'https://www.atouchofclassbridal.com/', 'new'))
+    conn.commit()
+    conn.close()
+    print("Test lead added to the database")
+
 def main():
-    # Check if .env file exists and contains EXA_API_KEY
-    if not os.path.exists('.env') or 'EXA_API_KEY' not in os.environ:
+    # Check if .env file exists and contains all required API keys
+    required_keys = ['EXA_API_KEY', 'GROQ_API_KEY', 'APOLLO_API_KEY']
+    if not os.path.exists('.env') or not all(key in os.environ for key in required_keys):
         setup()
     
     load_dotenv()  # Reload environment variables
     initialize_exa()  # Initialize Exa API client
+    initialize_research_tools()  # Initialize research tools
     
     print_welcome()
 
@@ -114,6 +136,16 @@ def main():
                 print("Invalid lead ID. Please provide a valid integer.")
         elif action == 'view-errors':
             view_errors()
+        elif action == 'research-leads':
+            print("Starting research process...")
+            conduct_research()
+            print("Research process completed.")
+        elif action == 'add-test-lead':
+            add_test_lead()
+        elif action == 'check-leads':
+            all_leads = check_leads_table()
+            for lead in all_leads:
+                print(f"ID: {lead[0]}, Company: {lead[1]}, Website: {lead[2]}, Status: {lead[3]}")
         else:
             print("Invalid command. Type 'help' for usage information.")
 
