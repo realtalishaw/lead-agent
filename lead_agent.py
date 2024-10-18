@@ -6,6 +6,7 @@ import os
 import logging
 from dotenv import load_dotenv
 import json
+import math
 
 # Set up logging
 logging.basicConfig(filename='lead_agent.log', level=logging.INFO,
@@ -30,12 +31,9 @@ def initialize_exa():
 conn = sqlite3.connect('leads.db')
 cursor = conn.cursor()
 
-# Drop the existing leads table if it exists
-cursor.execute('DROP TABLE IF EXISTS leads')
-
 # Create the leads table with the correct structure
 cursor.execute('''
-    CREATE TABLE leads (
+    CREATE TABLE IF NOT EXISTS leads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         company_name TEXT,
         website TEXT NOT NULL UNIQUE,
@@ -55,20 +53,6 @@ cursor.execute('''
         status TEXT DEFAULT 'not-started'
     )
 ''')
-
-# Modify the leads table
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS leads (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        company_name TEXT,
-        website TEXT NOT NULL UNIQUE,
-        source_url TEXT,
-        status TEXT DEFAULT 'new',
-        additional_info TEXT,
-        score REAL
-    )
-''')
-conn.commit()
 
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS errors (
@@ -131,6 +115,13 @@ def find_similar_websites(url):
         logging.info(f"Starting to find similar websites for: {url}")
         print(f"Starting to find similar websites for: {url}")
 
+        cursor.execute('SELECT status FROM seed_urls WHERE url = ?', (url,))
+        status = cursor.fetchone()
+
+        if status and status[0] == 'completed':
+            print(f"Skipping {url} as it has already been processed.")
+            return
+
         cursor.execute('UPDATE seed_urls SET status = "processing" WHERE url = ?', (url,))
         conn.commit()
 
@@ -182,21 +173,60 @@ def find_similar_websites(url):
         print(f"Error processing {url}: {str(e)}")
 
 def view_leads():
-    cursor.execute('SELECT * FROM leads')
-    leads = cursor.fetchall()
-    if not leads:
-        print("No leads found.")
-    else:
+    cursor.execute('SELECT COUNT(*) FROM leads')
+    total_leads = cursor.fetchone()[0]
+    leads_per_page = 10
+    total_pages = math.ceil(total_leads / leads_per_page)
+    current_page = 1
+
+    while True:
+        cursor.execute('SELECT id, company_name FROM leads LIMIT ? OFFSET ?', 
+                       (leads_per_page, (current_page - 1) * leads_per_page))
+        leads = cursor.fetchall()
+
+        print(f"\nPage {current_page} of {total_pages}")
         for lead in leads:
-            print(f"ID: {lead[0]}")
-            print(f"Company Name: {lead[1]}")
-            print(f"Website: {lead[2]}")
-            print(f"Source: {lead[3]}")
-            print(f"Status: {lead[4]}")
-            additional_info = json.loads(lead[5])
-            print(f"Summary: {additional_info.get('summary', 'N/A')}")
-            print(f"Score: {lead[6]}")
-            print("---")
+            print(f"ID: {lead[0]}, Company Name: {lead[1]}")
+
+        print("\nOptions:")
+        print("n - Next page")
+        print("p - Previous page")
+        print("v <ID> - View details of a specific lead")
+        print("q - Return to main menu")
+
+        choice = input("Enter your choice: ").strip().lower()
+
+        if choice == 'n' and current_page < total_pages:
+            current_page += 1
+        elif choice == 'p' and current_page > 1:
+            current_page -= 1
+        elif choice.startswith('v '):
+            try:
+                lead_id = int(choice.split()[1])
+                view_lead_details(lead_id)
+            except (ValueError, IndexError):
+                print("Invalid lead ID. Please try again.")
+        elif choice == 'q':
+            break
+        else:
+            print("Invalid choice. Please try again.")
+
+def view_lead_details(lead_id):
+    cursor.execute('SELECT * FROM leads WHERE id = ?', (lead_id,))
+    lead = cursor.fetchone()
+    if lead:
+        print(f"\nLead Details:")
+        print(f"ID: {lead[0]}")
+        print(f"Company Name: {lead[1]}")
+        print(f"Website: {lead[2]}")
+        print(f"Source: {lead[3]}")
+        print(f"Status: {lead[4]}")
+        additional_info = json.loads(lead[5])
+        print(f"Summary: {additional_info.get('summary', 'N/A')}")
+        print(f"Score: {lead[6]}")
+        print(f"Additional Text: {additional_info.get('text', 'N/A')}")
+    else:
+        print(f"No lead found with ID: {lead_id}")
 
 def delete_lead(lead_id):
     cursor.execute('DELETE FROM leads WHERE id = ?', (lead_id,))
@@ -214,7 +244,7 @@ def view_errors():
             print(f"ID: {error[0]}, URL: {error[1]}, Error: {error[2]}, Timestamp: {error[3]}")
 
 def get_seed_urls():
-    cursor.execute('SELECT url FROM seed_urls')
+    cursor.execute('SELECT url FROM seed_urls WHERE status != "completed"')
     return [row[0] for row in cursor.fetchall()]
 
 # Ensure the database connection is closed when the module is unloaded
