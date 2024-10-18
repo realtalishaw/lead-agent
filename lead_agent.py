@@ -1,5 +1,6 @@
 import sqlite3
 import argparse
+import atexit
 
 # Create and connect to the SQLite database
 conn = sqlite3.connect('leads.db')
@@ -101,5 +102,7 @@ if __name__ == "__main__":
     else:
         parser.print_help()
 
-# Close the database connection
-conn.close()
+# Ensure the database connection is closed when the module is unloaded
+@atexit.register
+def close_connection():
+    conn.close()
